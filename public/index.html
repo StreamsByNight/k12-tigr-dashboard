@@ -82,7 +82,7 @@
                     document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
                 }
 
-                // --- RENDERING CALENDAR (CLICKABLE) ---
+                // --- RENDERING CALENDAR ---
                 const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment' || p.plannable_type === 'quiz');
                 renderCalendar(calendarEvents);
 
@@ -109,10 +109,14 @@
                         </div>`;
                 }).join('');
 
-                // --- RENDERING FOCUS (CLICKABLE) ---
+                // --- RENDERING ASSIGNMENTS (FIXED REDIRECT) ---
                 const lessons = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
                 document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => {
-                    const link = item.html_url || `https://stridek12academy.com/courses/${item.course_id}`;
+                    // FIX: Ensure relative URLs are prepended with the school domain
+                    let link = item.html_url;
+                    if (!link || link.startsWith('/')) {
+                        link = `https://stridek12academy.com${link || '/courses/' + item.course_id}`;
+                    }
                     return `
                     <a href="${link}" target="_blank" class="block p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center hover:bg-sky-100 dark:hover:bg-slate-700 transition-colors">
                         <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${item.plannable?.title || item.title}</p>
@@ -133,7 +137,13 @@
             }
             calContent.innerHTML = events.slice(0, 4).map(ev => {
                 const date = new Date(ev.plannable_date || ev.todo_date);
-                const link = ev.html_url || "#";
+                
+                // FIX: Ensure relative URLs are prepended with the school domain
+                let link = ev.html_url;
+                if (!link || link.startsWith('/')) {
+                    link = `https://stridek12academy.com${link || '/calendar'}`;
+                }
+
                 return `
                     <a href="${link}" target="_blank" class="flex items-center gap-4 mb-3 last:mb-0 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-transparent hover:border-blue-200 hover:shadow-sm transition-all group/item">
                         <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px] group-hover/item:scale-105 transition-transform">
@@ -150,7 +160,6 @@
             }).join('');
         }
 
-        // --- THEME & UTILITIES ---
         function toggleTheme() {
             isDark = !isDark;
             localStorage.setItem(THEME_KEY, JSON.stringify(isDark));
@@ -197,7 +206,6 @@
             btn.classList.toggle('opacity-50', isMuted);
         }
 
-        // --- TODO LIST ---
         function renderTodos() {
             const list = document.getElementById('todo-list');
             list.innerHTML = todos.map((t, i) => `
@@ -226,7 +234,6 @@
             }, 300);
         }
 
-        // --- EDIT MODE ---
         function toggleEdit() {
             isEditMode = !isEditMode;
             document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit';
@@ -243,7 +250,6 @@
             hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).style.display = 'none'; });
         }
 
-        // --- CLOCK & PROGRESS ---
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
