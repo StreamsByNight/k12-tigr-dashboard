@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launchpad | Admin Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen p-8">
+
+    <div class="max-w-5xl mx-auto flex justify-between items-center mb-12">
+        <div>
+            <h1 class="text-3xl font-black text-white tracking-tighter">System Control</h1>
+            <p class="text-slate-500 text-sm font-bold uppercase tracking-widest">Admin Dashboard</p>
+        </div>
+        <a href="/" class="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2 rounded-full text-xs font-bold transition-all">
+            Back to Launchpad
+        </a>
+    </div>
+
+    <div class="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-[2rem]">
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">API Connection</h3>
+            <div class="flex items-center gap-3">
+                <div class="w-3 h-3 bg-green-500 rounded-full shadow-[0_0_15px_rgba(34,197,94,0.5)] animate-pulse"></div>
+                <span class="text-xl font-bold text-white">Stride Canvas</span>
+            </div>
+            <p class="text-slate-500 text-xs mt-2">External domain: stridek12academy.com</p>
+        </div>
+
+        <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-[2rem]">
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">System Announcement</h3>
+            <div class="flex gap-4">
+                <input type="text" id="alert-text" placeholder="Type a maintenance message..." class="flex-1 bg-slate-800 border-none rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                <button onclick="alert('Update feature coming soon!')" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs transition-all">
+                    Push Update
+                </button>
+            </div>
+        </div>
+
+        <div class="md:col-span-3 bg-slate-900 border border-slate-800 p-8 rounded-[2rem]">
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-6">Security & Identity Logs</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead>
+                        <tr class="text-slate-600 border-b border-slate-800">
+                            <th class="pb-4 font-bold">Property</th>
+                            <th class="pb-4 font-bold">Current Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-slate-300">
+                        <tr class="border-b border-slate-800/50">
+                            <td class="py-4 font-mono text-blue-400">SESSION_SECURE</td>
+                            <td class="py-4 text-green-400 font-bold italic text-xs">ENABLED (SSL)</td>
+                        </tr>
+                        <tr class="border-b border-slate-800/50">
+                            <td class="py-4 font-mono text-blue-400">PROXY_TRUST</td>
+                            <td class="py-4">Cloudflare / Render Loop</td>
+                        </tr>
+                        <tr>
+                            <td class="py-4 font-mono text-blue-400">REDIRECT_DOMAIN</td>
+                            <td class="py-4 font-bold">launchpad.k12learning.online</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer class="max-w-5xl mx-auto mt-12 text-center">
+        <p class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">Authenticated Admin Session Only</p>
+    </footer>
+
+</body>
+</html>
