@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en" id="app-html">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K12 Launch Pad - Home</title>
+    <link rel="icon" type="image/png" href="https://imgur.com/UNZK8ik.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { 
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: { 'k12-blue': '#0033cc', 'k12-bg': '#f0f7ff' },
+                    animation: { 'pulse-fast': 'pulse 0.5s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+                }
+            }
+        }
+
+        const STORAGE_KEY = 'tigr_hidden_widgets';
+        const TODO_KEY = 'tigr_todo_list';
+        const MUTE_KEY = 'tigr_muted';
+        const THEME_KEY = 'tigr_dark_mode';
+        
+        let hiddenWidgets = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        let todos = JSON.parse(localStorage.getItem(TODO_KEY) || "[]");
+        let isMuted = JSON.parse(localStorage.getItem(MUTE_KEY) || "false");
+        let isDark = JSON.parse(localStorage.getItem(THEME_KEY) || "false");
+        let isEditMode = false;
+        let notifiedEvents = new Set();
+
+        const bellSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+
+        async function updateWeather() {
+            try {
+                const geoRes = await fetch('https://ipapi.co/json/');
+                const geoData = await geoRes.json();
+                const { city, latitude, longitude } = geoData;
+
+                const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit`);
+                const weatherData = await weatherRes.json();
+                
+                const temp = Math.round(weatherData.current_weather.temperature);
+                const code = weatherData.current_weather.weathercode;
+
+                let emoji = "☁️";
+                if (code <= 3) emoji = "☀️";
+                else if (code >= 51 && code <= 67) emoji = "🌧️";
+                else if (code >= 71 && code <= 77) emoji = "❄️";
+                else if (code >= 95) emoji = "⛈️";
+
+                document.getElementById('weather-display').innerHTML = `
+                    <div class="flex items-center gap-2 mt-4 bg-white/20 px-5 py-2 rounded-full border border-white/10 backdrop-blur-sm">
+                        <span class="text-2xl">${emoji}</span>
+                        <span class="text-sm font-black uppercase tracking-widest">${city}: ${temp}°F</span>
+                    </div>
+                `;
+            } catch (e) {
+                console.error("Weather failed:", e);
+                document.getElementById('weather-display').innerHTML = `<span class="text-[10px] opacity-50 uppercase font-bold">Weather Unavailable</span>`;
+            }
+        }
+
+        async function fetchCanvasData() {
+            try {
+                const response = await fetch('/api/assignments'); 
+                if (response.status === 401) {
+                    document.getElementById('auth-section').classList.remove('hidden');
+                    return;
+                }
+                const data = await response.json();
+                document.getElementById('auth-section').classList.add('hidden');
+                
+                if (data.user) {
+                    const hour = new Date().getHours();
+                    let greeting = "Hi";
+                    if (hour < 12) greeting = "Good Morning";
+                    else if (hour < 18) greeting = "Good Afternoon";
+                    else greeting = "Good Evening";
+                    
+                    // Removes "Gradebook" if it's part of the name string
+                    const cleanName = data.user.replace(/Gradebook/gi, '').trim();
+                    document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
+                }
+
+                const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment');
+                renderCalendar(calendarEvents);
+
+                const courseContainer = document.getElementById('course-list');
+                courseContainer.innerHTML = data.courses.map(course => {
+                    const score = course.enrollments?.[0]?.computed_current_score || 0;
+                    const grade = course.enrollments?.[0]?.computed_current_grade || 'N/A';
+                    return `
+                        <div id="course-${course.id}" class="min-w-[280px] bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between relative group">
+                            <button onclick="removeWidget('course-${course.id}')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 text-white w-6 h-1.5 rounded-full z-10"></button>
+                            <div>
+                                <div class="flex justify-between items-center mb-4">
+                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase">Semester 2</span>
+                                    <div class="flex items-center gap-1 cursor-pointer" onclick="openCalculator('${course.name}', ${score})">
+                                         <span class="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">CALC</span>
+                                         <span class="text-lg font-black text-slate-700 dark:text-white">${grade}</span>
+                                    </div>
+                                </div>
+                                <h3 class="font-black text-slate-800 dark:text-white text-sm mb-4 h-10 overflow-hidden leading-tight">${course.name}</h3>
+                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-32 flex items-center justify-center mb-4 text-4xl">📚</div>
+                            </div>
+                            <a href="https://stridek12learning.org/courses/${course.id}" target="_blank" class="w-full py-2.5 border-2 border-blue-600 text-blue-600 rounded-full text-[11px] font-black text-center hover:bg-blue-600 hover:text-white transition-all">➜ Start Course</a>
+                        </div>`;
+                }).join('');
+
+                const lessons = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
+                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => `
+                    <div class="p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center">
+                        <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${item.plannable?.title || item.title}</p>
+                        <span class="text-blue-600 font-bold ml-2">❯</span>
+                    </div>`).join('');
+
+                checkUpcomingEvents(lessons);
+                applyWidgetVisibility();
+            } catch (e) { console.error(e); }
+        }
+
+        function renderCalendar(events) {
+            const calContent = document.getElementById('calendar-content');
+            if (events.length === 0) {
+                calContent.innerHTML = `<p class="text-[10px] font-bold text-slate-400 text-center uppercase py-4">No events scheduled</p>`;
+                return;
+            }
+            calContent.innerHTML = events.slice(0, 4).map(ev => {
+                const date = new Date(ev.plannable_date || ev.todo_date);
+                return `
+                    <div class="flex items-center gap-4 mb-3 last:mb-0 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-transparent hover:border-blue-200 transition-all">
+                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px]">
+                            <div class="text-[9px] font-black leading-none">${date.toLocaleString('default', { month: 'short' }).toUpperCase()}</div>
+                            <div class="text-base font-black">${date.getDate()}</div>
+                        </div>
+                        <div class="overflow-hidden flex-grow">
+                            <p class="text-xs font-black text-slate-800 dark:text-white truncate">${ev.plannable?.title || 'Event'}</p>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleTheme() {
+            isDark = !isDark;
+            localStorage.setItem(THEME_KEY, JSON.stringify(isDark));
+            applyTheme();
+        }
+
+        function applyTheme() {
+            document.documentElement.classList.toggle('dark', isDark);
+            document.getElementById('theme-btn').innerHTML = isDark ? '☀️ Light' : '🌙 Dark';
+        }
+
+        function testBell() {
+            bellSound.play().catch(() => alert("Interact with the page to enable audio!"));
+        }
+
+        function checkUpcomingEvents(events) {
+            const now = new Date();
+            events.forEach(event => {
+                const eventTime = new Date(event.plannable_date || event.todo_date);
+                const diffMinutes = (eventTime - now) / (1000 * 60);
+                if (diffMinutes > 0 && diffMinutes <= 5 && !notifiedEvents.has(event.id)) {
+                    triggerBellNotification();
+                    notifiedEvents.add(event.id);
+                }
+            });
+        }
+
+        function triggerBellNotification() {
+            if (!isMuted) bellSound.play().catch(() => {});
+            const clockWidget = document.getElementById('w-clock');
+            clockWidget.classList.add('animate-pulse-fast', 'ring-4', 'ring-yellow-400');
+            setTimeout(() => clockWidget.classList.remove('animate-pulse-fast', 'ring-4', 'ring-yellow-400'), 5000);
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            localStorage.setItem(MUTE_KEY, JSON.stringify(isMuted));
+            updateMuteUI();
+        }
+
+        function updateMuteUI() {
+            const btn = document.getElementById('mute-btn');
+            btn.innerHTML = isMuted ? '🔇 Muted' : '🔔 Alerts';
+            btn.classList.toggle('opacity-50', isMuted);
+        }
+
+        function renderTodos() {
+            const list = document.getElementById('todo-list');
+            list.innerHTML = todos.map((t, i) => `
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" onchange="removeTodo(${i})" class="w-4 h-4 accent-blue-600 cursor-pointer">
+                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300">${t}</span>
+                </div>
+            `).join('');
+        }
+
+        function addTodo() {
+            const input = document.getElementById('todo-input');
+            if (input.value.trim()) {
+                todos.push(input.value.trim());
+                localStorage.setItem(TODO_KEY, JSON.stringify(todos));
+                input.value = '';
+                renderTodos();
+            }
+        }
+
+        function removeTodo(index) {
+            setTimeout(() => {
+                todos.splice(index, 1);
+                localStorage.setItem(TODO_KEY, JSON.stringify(todos));
+                renderTodos();
+            }, 300);
+        }
+
+        function toggleEdit() {
+            isEditMode = !isEditMode;
+            document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit';
+            document.querySelectorAll('.remove-handle').forEach(h => h.classList.toggle('hidden', !isEditMode));
+        }
+
+        function removeWidget(id) {
+            document.getElementById(id).style.display = 'none';
+            hiddenWidgets.push(id);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets));
+        }
+
+        function applyWidgetVisibility() {
+            hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).style.display = 'none'; });
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function updateProgress() {
+            const total = new Date(2026, 5, 15) - new Date(2025, 8, 1);
+            const current = new Date() - new Date(2025, 8, 1);
+            const percent = Math.min(100, Math.max(0, (current / total) * 100));
+            document.getElementById('progress-bar').style.width = percent + '%';
+            document.getElementById('progress-text').innerText = Math.round(percent) + '% of School Year Complete';
+        }
+
+        function openCalculator(n, c) {
+            document.getElementById('calc-modal').style.display = 'flex';
+            document.getElementById('calc-course').innerText = n;
+            document.getElementById('cur-score').innerText = c;
+        }
+
+        window.onload = () => {
+            applyTheme();
+            updateClock();
+            updateProgress();
+            renderTodos();
+            updateMuteUI();
+            updateWeather();
+            setInterval(updateClock, 1000);
+            setInterval(updateWeather, 1800000);
+            fetchCanvasData();
+            setInterval(fetchCanvasData, 300000); 
+        };
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+        body { font-family: 'Nunito', sans-serif; cursor: default; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-[#f0f7ff] dark:bg-slate-950 min-h-screen p-4 md:p-8 flex flex-col transition-colors duration-500">
+
+    <header class="max-w-7xl mx-auto w-full flex justify-between items-center mb-8">
+        <div class="flex items-center gap-2">
+            <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-8">
+            <span class="bg-white dark:bg-slate-900 px-3 py-1 rounded-full text-[10px] font-black text-blue-600 border border-slate-200 dark:border-slate-800">LAUNCH PAD</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <button onclick="testBell()" class="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase">Test 🔔</button>
+            <button id="mute-btn" onclick="toggleMute()" class="text-[10px] font-black uppercase text-blue-600"></button>
+            <button id="theme-btn" onclick="toggleTheme()" class="text-[10px] font-black uppercase text-slate-500 hover:text-blue-600">🌙 Dark</button>
+            <button onclick="localStorage.clear(); location.reload();" class="text-[10px] font-black text-slate-400 uppercase hover:text-red-500 transition-colors">Reset</button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto w-full flex-grow">
+        <div class="flex justify-between items-center mb-8">
+            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi Coco!</h2>
+            <button id="edit-btn" onclick="toggleEdit()" class="bg-white dark:bg-slate-900 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-sm font-bold text-blue-600 hover:scale-105 transition-all">✎ Edit</button>
+        </div>
+
+        <div id="w-progress" class="bg-white dark:bg-slate-900 p-6 rounded-[2rem] mb-8 border border-slate-100 dark:border-slate-800 relative group">
+            <button onclick="removeWidget('w-progress')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+            <div class="flex justify-between items-center mb-2">
+                <span id="progress-text" class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading...</span>
+            </div>
+            <div class="w-full bg-slate-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
+                <div id="progress-bar" class="bg-blue-600 h-full transition-all duration-1000" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div id="w-focus" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('w-focus')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <h3 class="text-xl font-black mb-6 dark:text-white">Today's Focus</h3>
+                <div id="lessons-list" class="space-y-4"></div>
+            </div>
+
+            <div id="w-clock" class="bg-sky-400 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-lg relative group overflow-hidden transition-all duration-300">
+                <button onclick="removeWidget('w-clock')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/40 w-6 h-1.5 rounded-full"></button>
+                <div id="clock" class="text-7xl font-black tracking-tighter">00:00</div>
+                <div id="weather-display" class="flex flex-col items-center">
+                    <span class="animate-pulse text-[10px] font-bold uppercase tracking-widest mt-4">Loading Weather...</span>
+                </div>
+            </div>
+
+            <div id="w-todo" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('w-todo')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <h3 class="text-xl font-black mb-4 dark:text-white text-center">Tasks</h3>
+                <div id="todo-list" class="space-y-3 mb-4 max-h-[120px] overflow-y-auto no-scrollbar"></div>
+                <div class="flex gap-2">
+                    <input type="text" id="todo-input" onkeypress="if(event.key==='Enter') addTodo()" placeholder="Add task..." class="w-full bg-slate-50 dark:bg-slate-800 dark:text-white rounded-xl px-4 py-2 text-xs font-bold outline-none border border-transparent focus:border-blue-500">
+                    <button onclick="addTodo()" class="bg-blue-600 text-white px-4 rounded-xl font-black text-lg hover:bg-blue-700 transition-colors">+</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <div class="space-y-6">
+                <a href="https://www.biguniverse.com/login/" target="_blank" id="w-library" class="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center relative group hover:shadow-lg transition-all h-[130px]">
+                    <button onclick="event.preventDefault(); removeWidget('w-library')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                    <div class="text-blue-600 font-black text-xl mb-1">Library</div>
+                    <div class="w-10 h-1 bg-pink-500 rounded-full"></div>
+                </a>
+                <a href="https://www.stridelogin.com/login/" target="_blank" id="w-arcade" class="bg-purple-600 p-8 rounded-[2.5rem] flex flex-col items-center justify-center text-white relative group hover:scale-[1.02] transition-all h-[130px]">
+                    <button onclick="event.preventDefault(); removeWidget('w-arcade')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full"></button>
+                    <span class="text-2xl mb-1">🎮</span>
+                    <span class="font-black text-[10px] uppercase tracking-widest text-center">Skills Arcade</span>
+                </a>
+            </div>
+
+            <div id="w-calendar" class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 relative group">
+                <button onclick="removeWidget('w-calendar')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <div class="flex justify-between items-center mb-6">
+                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Next Up</h4>
+                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">LIVE SCHEDULE</span>
+                </div>
+                <div id="calendar-content" class="grid grid-cols-1 gap-3"></div>
+            </div>
+
+            <div class="space-y-6">
+                <a href="https://account.tutoring.k12.com/login/" target="_blank" id="w-tutoring" class="bg-[#1e4a47] p-8 rounded-[2.5rem] flex flex-col items-center justify-center text-white relative group hover:scale-[1.02] transition-all h-[130px]">
+                    <button onclick="event.preventDefault(); removeWidget('w-tutoring')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full"></button>
+                    <span class="text-2xl mb-1">🎓</span>
+                    <span class="font-black text-[10px] uppercase tracking-widest text-center">Tutoring</span>
+                </a>
+                <a href="https://login.classlink.com/my/k12" target="_blank" id="w-classlink" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-4 flex flex-col items-center justify-center border border-slate-100 dark:border-slate-800 relative group hover:shadow-lg transition-all h-[130px]">
+                    <button onclick="event.preventDefault(); removeWidget('w-classlink')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                    <span class="text-3xl mb-2">🔗</span>
+                    <span class="bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black w-full uppercase text-center">Classlink</span>
+                </a>
+            </div>
+        </div>
+
+        <section class="mb-20">
+            <h3 class="text-2xl font-black mb-8 dark:text-white">Your Courses</h3>
+            <div id="course-list" class="flex gap-6 overflow-x-auto pb-10 no-scrollbar"></div>
+        </section>
+    </main>
+
+    <footer class="max-w-7xl mx-auto w-full py-12 border-t border-slate-200 dark:border-slate-800 text-center">
+        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Powered by: K12 All rights reserved</p>
+        <div class="flex flex-wrap justify-center gap-x-6 gap-y-3 mb-6">
+            <button onclick="const w=450,h=600,l=(window.screen.width/2)-(w/2),t=(window.screen.height/2)-(h/2);window.open('https://chat-ti.k12.com/','K12Chat',`width=${w},height=${h},top=${t},left=${l}`)" class="text-xs font-bold text-blue-600 hover:underline">Chat With Us</button>
+            <a href="https://stridelearning.com/terms-of-use/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Terms</a>
+            <a href="https://stridelearning.com/privacy-policy/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Privacy</a>
+            <a href="https://www.k12.com/accessibility/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Accessibility</a>
+        </div>
+    </footer>
+
+    <div id="calc-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-8 text-center border dark:border-slate-800 shadow-2xl">
+            <h3 id="calc-course" class="font-black text-xl mb-4 text-slate-800 dark:text-white">Course</h3>
+            <p class="text-sm font-bold text-slate-400 mb-8 uppercase tracking-widest">Current Score: <span id="cur-score">0</span>%</p>
+            <button onclick="document.getElementById('calc-modal').style.display='none'" class="w-full bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-4 rounded-full font-black uppercase text-xs tracking-widest">Close</button>
+        </div>
+    </div>
+
+    <div id="auth-section" class="hidden fixed inset-0 bg-white dark:bg-slate-950 z-[400] flex flex-col items-center justify-center p-6 text-center">
+        <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
+        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-black py-5 px-16 rounded-full shadow-2xl uppercase tracking-widest">Connect Canvas</button>
+    </div>
+
+</body>
+</html>
