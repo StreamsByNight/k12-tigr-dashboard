@@ -78,14 +78,15 @@
                     else if (hour < 18) greeting = "Good Afternoon";
                     else greeting = "Good Evening";
                     
-                    // Removes "Gradebook" if it's part of the name string
                     const cleanName = data.user.replace(/Gradebook/gi, '').trim();
                     document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
                 }
 
-                const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment');
+                // --- RENDERING CALENDAR (CLICKABLE) ---
+                const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment' || p.plannable_type === 'quiz');
                 renderCalendar(calendarEvents);
 
+                // --- RENDERING COURSES ---
                 const courseContainer = document.getElementById('course-list');
                 courseContainer.innerHTML = data.courses.map(course => {
                     const score = course.enrollments?.[0]?.computed_current_score || 0;
@@ -95,7 +96,7 @@
                             <button onclick="removeWidget('course-${course.id}')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 text-white w-6 h-1.5 rounded-full z-10"></button>
                             <div>
                                 <div class="flex justify-between items-center mb-4">
-                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase">Semester 2</span>
+                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase">Current Grade</span>
                                     <div class="flex items-center gap-1 cursor-pointer" onclick="openCalculator('${course.name}', ${score})">
                                          <span class="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">CALC</span>
                                          <span class="text-lg font-black text-slate-700 dark:text-white">${grade}</span>
@@ -108,12 +109,16 @@
                         </div>`;
                 }).join('');
 
+                // --- RENDERING FOCUS (CLICKABLE) ---
                 const lessons = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
-                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => `
-                    <div class="p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center">
+                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => {
+                    const link = item.html_url || `https://stridek12academy.com/courses/${item.course_id}`;
+                    return `
+                    <a href="${link}" target="_blank" class="block p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center hover:bg-sky-100 dark:hover:bg-slate-700 transition-colors">
                         <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${item.plannable?.title || item.title}</p>
                         <span class="text-blue-600 font-bold ml-2">❯</span>
-                    </div>`).join('');
+                    </a>`
+                }).join('');
 
                 checkUpcomingEvents(lessons);
                 applyWidgetVisibility();
@@ -128,21 +133,24 @@
             }
             calContent.innerHTML = events.slice(0, 4).map(ev => {
                 const date = new Date(ev.plannable_date || ev.todo_date);
+                const link = ev.html_url || "#";
                 return `
-                    <div class="flex items-center gap-4 mb-3 last:mb-0 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-transparent hover:border-blue-200 transition-all">
-                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px]">
+                    <a href="${link}" target="_blank" class="flex items-center gap-4 mb-3 last:mb-0 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-transparent hover:border-blue-200 hover:shadow-sm transition-all group/item">
+                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px] group-hover/item:scale-105 transition-transform">
                             <div class="text-[9px] font-black leading-none">${date.toLocaleString('default', { month: 'short' }).toUpperCase()}</div>
                             <div class="text-base font-black">${date.getDate()}</div>
                         </div>
                         <div class="overflow-hidden flex-grow">
-                            <p class="text-xs font-black text-slate-800 dark:text-white truncate">${ev.plannable?.title || 'Event'}</p>
+                            <p class="text-xs font-black text-slate-800 dark:text-white truncate group-hover/item:text-blue-600 transition-colors">${ev.plannable?.title || 'Event'}</p>
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                         </div>
-                    </div>
+                        <span class="text-blue-300 group-hover/item:text-blue-600 text-xs font-black">➜</span>
+                    </a>
                 `;
             }).join('');
         }
 
+        // --- THEME & UTILITIES ---
         function toggleTheme() {
             isDark = !isDark;
             localStorage.setItem(THEME_KEY, JSON.stringify(isDark));
@@ -189,6 +197,7 @@
             btn.classList.toggle('opacity-50', isMuted);
         }
 
+        // --- TODO LIST ---
         function renderTodos() {
             const list = document.getElementById('todo-list');
             list.innerHTML = todos.map((t, i) => `
@@ -217,6 +226,7 @@
             }, 300);
         }
 
+        // --- EDIT MODE ---
         function toggleEdit() {
             isEditMode = !isEditMode;
             document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit';
@@ -233,6 +243,7 @@
             hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).style.display = 'none'; });
         }
 
+        // --- CLOCK & PROGRESS ---
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -288,7 +299,7 @@
 
     <main class="max-w-7xl mx-auto w-full flex-grow">
         <div class="flex justify-between items-center mb-8">
-            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Hi Coco!</h2>
+            <h2 id="user-greeting" class="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Welcome!</h2>
             <button id="edit-btn" onclick="toggleEdit()" class="bg-white dark:bg-slate-900 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-sm font-bold text-blue-600 hover:scale-105 transition-all">✎ Edit</button>
         </div>
 
@@ -305,7 +316,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
             <div id="w-focus" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
                 <button onclick="removeWidget('w-focus')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
-                <h3 class="text-xl font-black mb-6 dark:text-white">Today's Focus</h3>
+                <h3 class="text-xl font-black mb-6 dark:text-white">Assignments</h3>
                 <div id="lessons-list" class="space-y-4"></div>
             </div>
 
@@ -345,8 +356,8 @@
             <div id="w-calendar" class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 relative group">
                 <button onclick="removeWidget('w-calendar')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
                 <div class="flex justify-between items-center mb-6">
-                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Next Up</h4>
-                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">LIVE SCHEDULE</span>
+                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Live Schedule</h4>
+                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">UPCOMING</span>
                 </div>
                 <div id="calendar-content" class="grid grid-cols-1 gap-3"></div>
             </div>
@@ -372,7 +383,7 @@
     </main>
 
     <footer class="max-w-7xl mx-auto w-full py-12 border-t border-slate-200 dark:border-slate-800 text-center">
-        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Powered by: K12 All rights reserved</p>
+        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Powered by Stride K12 - All rights reserved</p>
         <div class="flex flex-wrap justify-center gap-x-6 gap-y-3 mb-6">
             <button onclick="const w=450,h=600,l=(window.screen.width/2)-(w/2),t=(window.screen.height/2)-(h/2);window.open('https://chat-ti.k12.com/','K12Chat',`width=${w},height=${h},top=${t},left=${l}`)" class="text-xs font-bold text-blue-600 hover:underline">Chat With Us</button>
             <a href="https://stridelearning.com/terms-of-use/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Terms</a>
@@ -391,7 +402,8 @@
 
     <div id="auth-section" class="hidden fixed inset-0 bg-white dark:bg-slate-950 z-[400] flex flex-col items-center justify-center p-6 text-center">
         <img src="https://info-login.k12.com/common/img/k12-logo.svg" class="h-16 mb-8">
-        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-black py-5 px-16 rounded-full shadow-2xl uppercase tracking-widest">Connect Canvas</button>
+        <p class="mb-8 font-bold text-slate-600 dark:text-slate-400">Please connect your Canvas account to view your dashboard.</p>
+        <button onclick="window.location.href='/api/auth/canvas'" class="bg-blue-600 text-white font-black py-5 px-16 rounded-full shadow-2xl uppercase tracking-widest hover:bg-blue-700 transition-colors">Connect Canvas</button>
     </div>
 
 </body>
