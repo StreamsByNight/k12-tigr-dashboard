@@ -73,46 +73,53 @@
                 
                 if (data.user) {
                     const hour = new Date().getHours();
-                    let greeting = "Hi";
-                    if (hour < 12) greeting = "Good Morning";
-                    else if (hour < 18) greeting = "Good Afternoon";
-                    else greeting = "Good Evening";
-                    
+                    let greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
                     const cleanName = data.user.replace(/Gradebook/gi, '').trim();
                     document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
                 }
 
-                // --- RENDERING CALENDAR ---
+                // Render Calendar (Filtered to Today)
                 const calendarEvents = (data.planner || []).filter(p => p.plannable_type === 'calendar_event' || p.plannable_type === 'assignment' || p.plannable_type === 'quiz');
                 renderCalendar(calendarEvents);
 
-                // --- RENDERING COURSES ---
+                // --- RENDERING COURSES WITH GRADES ---
                 const courseContainer = document.getElementById('course-list');
                 courseContainer.innerHTML = data.courses.map(course => {
-                    const score = course.enrollments?.[0]?.computed_current_score || 0;
-                    const grade = course.enrollments?.[0]?.computed_current_grade || 'N/A';
+                    const enrollment = course.enrollments?.[0] || {};
+                    const score = Math.round(enrollment.computed_current_score) || 0;
+                    const grade = enrollment.computed_current_grade || 'N/A';
+                    
+                    const gradeColor = score >= 90 ? 'text-green-500 bg-green-50 dark:bg-green-900/20' : 
+                                       score >= 80 ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 
+                                       'text-slate-500 bg-slate-100 dark:bg-slate-800';
+
                     return `
                         <div id="course-${course.id}" class="min-w-[280px] bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between relative group">
                             <button onclick="removeWidget('course-${course.id}')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 text-white w-6 h-1.5 rounded-full z-10"></button>
                             <div>
-                                <div class="flex justify-between items-center mb-4">
-                                    <span class="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase">Current Grade</span>
-                                    <div class="flex items-center gap-1 cursor-pointer" onclick="openCalculator('${course.name}', ${score})">
-                                         <span class="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">CALC</span>
-                                         <span class="text-lg font-black text-slate-700 dark:text-white">${grade}</span>
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Current Grade</span>
+                                        <span class="text-2xl font-black text-slate-800 dark:text-white">${grade}</span>
+                                    </div>
+                                    <div class="flex flex-col items-end">
+                                        <button onclick="openCalculator('${course.name}', ${score})" class="text-[10px] font-bold ${gradeColor} px-3 py-1 rounded-full hover:scale-105 transition-transform">
+                                            ${score}%
+                                        </button>
                                     </div>
                                 </div>
                                 <h3 class="font-black text-slate-800 dark:text-white text-sm mb-4 h-10 overflow-hidden leading-tight">${course.name}</h3>
-                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-32 flex items-center justify-center mb-4 text-4xl">📚</div>
+                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-24 flex items-center justify-center mb-4 text-4xl">
+                                    ${score > 0 ? '📈' : '📚'}
+                                </div>
                             </div>
                             <a href="https://stridek12academy.com/courses/${course.id}" target="_blank" class="w-full py-2.5 border-2 border-blue-600 text-blue-600 rounded-full text-[11px] font-black text-center hover:bg-blue-600 hover:text-white transition-all">➜ Start Course</a>
                         </div>`;
                 }).join('');
 
-                // --- RENDERING ASSIGNMENTS (FIXED REDIRECT) ---
-                const lessons = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
-                document.getElementById('lessons-list').innerHTML = lessons.slice(0, 3).map(item => {
-                    // FIX: Ensure relative URLs are prepended with the school domain
+                // Render Top 3 Focus Assignments
+                const focusItems = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
+                document.getElementById('lessons-list').innerHTML = focusItems.slice(0, 3).map(item => {
                     let link = item.html_url;
                     if (!link || link.startsWith('/')) {
                         link = `https://stridek12academy.com${link || '/courses/' + item.course_id}`;
@@ -124,21 +131,35 @@
                     </a>`
                 }).join('');
 
-                checkUpcomingEvents(lessons);
+                checkUpcomingEvents(focusItems);
                 applyWidgetVisibility();
             } catch (e) { console.error(e); }
         }
 
         function renderCalendar(events) {
             const calContent = document.getElementById('calendar-content');
-            if (events.length === 0) {
-                calContent.innerHTML = `<p class="text-[10px] font-bold text-slate-400 text-center uppercase py-4">No events scheduled</p>`;
+            const now = new Date();
+
+            const todaysEvents = events.filter(ev => {
+                const eventDate = new Date(ev.plannable_date || ev.todo_date);
+                return eventDate.getDate() === now.getDate() &&
+                       eventDate.getMonth() === now.getMonth() &&
+                       eventDate.getFullYear() === now.getFullYear();
+            });
+
+            if (todaysEvents.length === 0) {
+                calContent.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-6 opacity-40">
+                        <span class="text-3xl mb-2">🏖️</span>
+                        <p class="text-[10px] font-bold text-slate-400 text-center uppercase tracking-widest">No sessions scheduled for today</p>
+                    </div>`;
                 return;
             }
-            calContent.innerHTML = events.slice(0, 4).map(ev => {
+
+            todaysEvents.sort((a, b) => new Date(a.plannable_date || a.todo_date) - new Date(b.plannable_date || b.todo_date));
+
+            calContent.innerHTML = todaysEvents.slice(0, 5).map(ev => {
                 const date = new Date(ev.plannable_date || ev.todo_date);
-                
-                // FIX: Ensure relative URLs are prepended with the school domain
                 let link = ev.html_url;
                 if (!link || link.startsWith('/')) {
                     link = `https://stridek12academy.com${link || '/calendar'}`;
@@ -146,12 +167,12 @@
 
                 return `
                     <a href="${link}" target="_blank" class="flex items-center gap-4 mb-3 last:mb-0 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-transparent hover:border-blue-200 hover:shadow-sm transition-all group/item">
-                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px] group-hover/item:scale-105 transition-transform">
+                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[45px]">
                             <div class="text-[9px] font-black leading-none">${date.toLocaleString('default', { month: 'short' }).toUpperCase()}</div>
                             <div class="text-base font-black">${date.getDate()}</div>
                         </div>
                         <div class="overflow-hidden flex-grow">
-                            <p class="text-xs font-black text-slate-800 dark:text-white truncate group-hover/item:text-blue-600 transition-colors">${ev.plannable?.title || 'Event'}</p>
+                            <p class="text-xs font-black text-slate-800 dark:text-white truncate group-hover/item:text-blue-600 transition-colors">${ev.plannable?.title || 'Class Session'}</p>
                             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                         </div>
                         <span class="text-blue-300 group-hover/item:text-blue-600 text-xs font-black">➜</span>
@@ -172,7 +193,7 @@
         }
 
         function testBell() {
-            bellSound.play().catch(() => alert("Interact with the page to enable audio!"));
+            bellSound.play().catch(() => alert("Interact with the page first to enable audio!"));
         }
 
         function checkUpcomingEvents(events) {
@@ -310,7 +331,7 @@
         </div>
 
         <div id="w-progress" class="bg-white dark:bg-slate-900 p-6 rounded-[2rem] mb-8 border border-slate-100 dark:border-slate-800 relative group">
-            <button onclick="removeWidget('w-progress')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+            <button onclick="removeWidget('w-progress')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
             <div class="flex justify-between items-center mb-2">
                 <span id="progress-text" class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading...</span>
             </div>
@@ -321,13 +342,13 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
             <div id="w-focus" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
-                <button onclick="removeWidget('w-focus')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <button onclick="removeWidget('w-focus')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                 <h3 class="text-xl font-black mb-6 dark:text-white">Assignments</h3>
                 <div id="lessons-list" class="space-y-4"></div>
             </div>
 
             <div id="w-clock" class="bg-sky-400 rounded-[2.5rem] p-8 text-white flex flex-col items-center justify-center shadow-lg relative group overflow-hidden transition-all duration-300">
-                <button onclick="removeWidget('w-clock')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/40 w-6 h-1.5 rounded-full"></button>
+                <button onclick="removeWidget('w-clock')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/40 w-6 h-1.5 rounded-full z-20"></button>
                 <div id="clock" class="text-7xl font-black tracking-tighter">00:00</div>
                 <div id="weather-display" class="flex flex-col items-center">
                     <span class="animate-pulse text-[10px] font-bold uppercase tracking-widest mt-4">Loading Weather...</span>
@@ -335,7 +356,7 @@
             </div>
 
             <div id="w-todo" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-50 dark:border-slate-800 relative group">
-                <button onclick="removeWidget('w-todo')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <button onclick="removeWidget('w-todo')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                 <h3 class="text-xl font-black mb-4 dark:text-white text-center">Tasks</h3>
                 <div id="todo-list" class="space-y-3 mb-4 max-h-[120px] overflow-y-auto no-scrollbar"></div>
                 <div class="flex gap-2">
@@ -348,34 +369,34 @@
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
             <div class="space-y-6">
                 <a href="https://www.biguniverse.com/login/" target="_blank" id="w-library" class="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center relative group hover:shadow-lg transition-all h-[130px]">
-                    <button onclick="event.preventDefault(); removeWidget('w-library')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                    <button onclick="event.preventDefault(); removeWidget('w-library')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                     <div class="text-blue-600 font-black text-xl mb-1">Library</div>
                     <div class="w-10 h-1 bg-pink-500 rounded-full"></div>
                 </a>
                 <a href="https://www.stridelogin.com/login/" target="_blank" id="w-arcade" class="bg-purple-600 p-8 rounded-[2.5rem] flex flex-col items-center justify-center text-white relative group hover:scale-[1.02] transition-all h-[130px]">
-                    <button onclick="event.preventDefault(); removeWidget('w-arcade')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full"></button>
+                    <button onclick="event.preventDefault(); removeWidget('w-arcade')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full z-20"></button>
                     <span class="text-2xl mb-1">🎮</span>
                     <span class="font-black text-[10px] uppercase tracking-widest text-center">Skills Arcade</span>
                 </a>
             </div>
 
             <div id="w-calendar" class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 relative group">
-                <button onclick="removeWidget('w-calendar')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                <button onclick="removeWidget('w-calendar')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                 <div class="flex justify-between items-center mb-6">
                     <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Live Schedule</h4>
-                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">UPCOMING</span>
+                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full uppercase">Today Only</span>
                 </div>
                 <div id="calendar-content" class="grid grid-cols-1 gap-3"></div>
             </div>
 
             <div class="space-y-6">
                 <a href="https://account.tutoring.k12.com/login/" target="_blank" id="w-tutoring" class="bg-[#1e4a47] p-8 rounded-[2.5rem] flex flex-col items-center justify-center text-white relative group hover:scale-[1.02] transition-all h-[130px]">
-                    <button onclick="event.preventDefault(); removeWidget('w-tutoring')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full"></button>
+                    <button onclick="event.preventDefault(); removeWidget('w-tutoring')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-white/20 w-6 h-1.5 rounded-full z-20"></button>
                     <span class="text-2xl mb-1">🎓</span>
                     <span class="font-black text-[10px] uppercase tracking-widest text-center">Tutoring</span>
                 </a>
                 <a href="https://login.classlink.com/my/k12" target="_blank" id="w-classlink" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-4 flex flex-col items-center justify-center border border-slate-100 dark:border-slate-800 relative group hover:shadow-lg transition-all h-[130px]">
-                    <button onclick="event.preventDefault(); removeWidget('w-classlink')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full"></button>
+                    <button onclick="event.preventDefault(); removeWidget('w-classlink')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                     <span class="text-3xl mb-2">🔗</span>
                     <span class="bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black w-full uppercase text-center">Classlink</span>
                 </a>
