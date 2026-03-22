@@ -5,7 +5,7 @@ const path = require('path');
 const app = express();
 
 // --- CONFIGURATION ---
-const CANVAS_URL = process.env.CANVAS_URL || "https://stridek12learning.org";
+const CANVAS_URL = process.env.CANVAS_URL || "stridek12academy.com";
 const CLIENT_ID = process.env.CLIENT_ID || "10000000000004";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "UXF6XMuf8mEPRwyUC6kfBHxPxKtc4yH96wrtvcfG6CMFUDLVtAMR893yGxKK62m2";
 
