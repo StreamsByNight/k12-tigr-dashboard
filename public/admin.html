@@ -34,12 +34,31 @@
         </div>
 
         <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-[2rem]">
-            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">System Announcement</h3>
-            <div class="flex gap-4">
-                <input type="text" id="alert-text" placeholder="Type a maintenance message..." class="flex-1 bg-slate-800 border-none rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                <button onclick="alert('Update feature coming soon!')" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs transition-all">
-                    Push Update
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">School Initial Override</h3>
+            <div class="flex flex-wrap gap-4">
+                <input type="text" id="target-user-id" placeholder="Canvas User ID" class="flex-1 min-w-[150px] bg-slate-800 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-white">
+                <input type="text" id="target-initial" placeholder="Initial (e.g. HCCA)" class="w-32 bg-slate-800 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-white uppercase">
+                <button onclick="saveOverride()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs transition-all">
+                    Apply Override
                 </button>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-3 font-bold uppercase tracking-wider">Note: This manually forces the blue badge text for specific users.</p>
+        </div>
+
+        <div class="md:col-span-3 bg-slate-900 border border-slate-800 p-8 rounded-[2rem]">
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-6">Active School Overrides</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead>
+                        <tr class="text-slate-600 border-b border-slate-800">
+                            <th class="pb-4 font-bold">Canvas User ID</th>
+                            <th class="pb-4 font-bold">Forced Initial</th>
+                            <th class="pb-4 font-bold">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="override-list-body" class="text-slate-300">
+                        </tbody>
+                </table>
             </div>
         </div>
 
@@ -76,5 +95,56 @@
         <p class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">Authenticated Admin Session Only</p>
     </footer>
 
+    <script>
+        // Load existing overrides on page load
+        async function fetchOverrides() {
+            try {
+                const response = await fetch('/api/admin/overrides');
+                const data = await response.json();
+                const container = document.getElementById('override-list-body');
+                container.innerHTML = '';
+
+                Object.entries(data).forEach(([userId, initial]) => {
+                    const row = document.createElement('tr');
+                    row.className = "border-b border-slate-800/50";
+                    row.innerHTML = `
+                        <td class="py-4 font-mono text-slate-400">${userId}</td>
+                        <td class="py-4"><span class="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-xs font-black">${initial}</span></td>
+                        <td class="py-4 text-xs font-bold text-red-500 cursor-pointer hover:underline" onclick="deleteOverride('${userId}')">Remove</td>
+                    `;
+                    container.appendChild(row);
+                });
+            } catch (err) { console.error("Error fetching overrides:", err); }
+        }
+
+        async function saveOverride() {
+            const userId = document.getElementById('target-user-id').value;
+            const initial = document.getElementById('target-initial').value;
+            
+            if(!userId || !initial) return alert("Fill both fields!");
+
+            const res = await fetch('/api/admin/overrides', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, initial })
+            });
+
+            if (res.ok) {
+                document.getElementById('target-user-id').value = '';
+                document.getElementById('target-initial').value = '';
+                fetchOverrides();
+            }
+        }
+
+        // Deleting works by sending the ID but keeping initial blank (logic handles it on server if you add it, 
+        // or for now you can just refresh the page)
+        async function deleteOverride(userId) {
+            // Note: For simplicity, you can just re-save as original if needed, 
+            // but usually admins just want to overwrite.
+            alert("Delete functionality requires a DELETE route on server. For now, just overwrite the ID.");
+        }
+
+        fetchOverrides();
+    </script>
 </body>
 </html>
