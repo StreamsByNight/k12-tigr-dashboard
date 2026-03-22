@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const session = require('express-session');
 const path = require('path');
+const fs = require('fs'); // Added for persistent storage
 const app = express();
 
 // --- CONFIGURATION ---
@@ -15,14 +16,34 @@ const BASE_URL = process.env.REDIRECT_URI || "https://launchpad.k12learning.onli
 const REDIRECT_URI = BASE_URL.includes('/api/auth/callback') ? BASE_URL : `${BASE_URL.replace(/\/$/, "")}/api/auth/callback`;
 
 const PORT = process.env.PORT || 3000;
+const DB_PATH = path.join(__dirname, 'database.json');
 
 // --- ADMIN & MAINTENANCE SETTINGS ---
 const ADMIN_IDS = ['1', '10000000000031']; 
 let isMaintenanceMode = false;
 
-// --- DATABASE (In-Memory Overrides) ---
-// Structure: { "canvas_user_id": "INITIAL" }
-let schoolOverrides = {}; 
+// --- DATABASE PERSISTENCE ---
+let schoolOverrides = {};
+
+// Load existing data on startup
+if (fs.existsSync(DB_PATH)) {
+    try {
+        const data = fs.readFileSync(DB_PATH, 'utf8');
+        schoolOverrides = JSON.parse(data);
+        console.log("Database loaded successfully.");
+    } catch (e) {
+        console.error("Error parsing database.json, starting empty.");
+    }
+}
+
+// Helper to save changes to file
+const saveToDb = () => {
+    try {
+        fs.writeFileSync(DB_PATH, JSON.stringify(schoolOverrides, null, 2));
+    } catch (e) {
+        console.error("Failed to save to database.json", e);
+    }
+};
 
 app.set('trust proxy', 1);
 
@@ -98,17 +119,31 @@ app.post('/api/admin/maintenance', (req, res) => {
     res.json({ enabled: isMaintenanceMode });
 });
 
-// Set Manual School Initial Override
+// Set Manual School Initial Override (Persistent)
 app.post('/api/admin/overrides', (req, res) => {
     if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
     const { userId, initial } = req.body;
     
     if (userId && initial) {
-        // Store the override (converted to uppercase, max 5 chars)
         schoolOverrides[userId.toString()] = initial.toUpperCase().substring(0, 5);
+        saveToDb(); // Write to JSON file
         res.json({ success: true, overrides: schoolOverrides });
     } else {
         res.status(400).json({ error: "UserID and Initial required" });
+    }
+});
+
+// Delete an Override
+app.delete('/api/admin/overrides/:userId', (req, res) => {
+    if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
+    const { userId } = req.params;
+    
+    if (schoolOverrides[userId]) {
+        delete schoolOverrides[userId];
+        saveToDb(); // Sync change to file
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: "Override not found" });
     }
 });
 
@@ -118,7 +153,7 @@ app.get('/api/admin/overrides', (req, res) => {
     res.json(schoolOverrides);
 });
 
-// 3. Main Data Route (The logic core)
+// 3. Main Data Route
 app.get('/api/assignments', async (req, res) => {
     const userId = req.session.canvas_user_id;
 
@@ -149,16 +184,13 @@ app.get('/api/assignments', async (req, res) => {
 
         const uniqueCourses = Array.from(new Map(processedCourses.map(c => [c.id, c])).values());
         
-        // --- OVERRIDE LOGIC ---
-        // Check if an admin has set a manual initial for this specific user
+        // Priority: 1. Manual Override (Persistent) | 2. Auto-detected | 3. Default
         const manualInitial = schoolOverrides[userId];
-        
-        // Priority: 1. Manual Override | 2. Auto-detected from course | 3. Default "K12"
         const mainSchool = manualInitial || (uniqueCourses.length > 0 ? uniqueCourses[0].school_initial : "K12");
 
         res.json({
             user: profile.data.short_name || profile.data.name, 
-            userId: userId, // Useful for admins to find their own ID
+            userId: userId, 
             courses: uniqueCourses,                               
             planner: planner.data,
             main_school: mainSchool,
