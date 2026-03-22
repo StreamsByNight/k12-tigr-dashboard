@@ -17,9 +17,12 @@ const REDIRECT_URI = BASE_URL.includes('/api/auth/callback') ? BASE_URL : `${BAS
 const PORT = process.env.PORT || 3000;
 
 // --- ADMIN & MAINTENANCE SETTINGS ---
-// Replace 'YOUR_CANVAS_ID_HERE' with your numerical ID from Canvas
-const ADMIN_IDS = ['1', 'YOUR_CANVAS_ID_HERE', '10000000000031']; 
+const ADMIN_IDS = ['1', '10000000000031']; 
 let isMaintenanceMode = false;
+
+// --- DATABASE (In-Memory Overrides) ---
+// Structure: { "canvas_user_id": "INITIAL" }
+let schoolOverrides = {}; 
 
 app.set('trust proxy', 1);
 
@@ -37,27 +40,24 @@ app.use(session({
 app.use(express.static('public')); 
 app.use(express.json()); 
 
-// --- HELPER: Extract School Initials (e.g., "HCCA") ---
+// --- HELPER: Extract School Initials ---
 const extractInitials = (courseCode) => {
     try {
         if (!courseCode) return "K12";
-        // Logic to grab prefix before first underscore or dash
         const parts = courseCode.split(/[_-]/); 
         const firstPart = parts[0].toUpperCase();
-        // Typically school codes are 3-5 chars (HCCA, OHVA, CVA)
         return firstPart.length <= 5 ? firstPart : firstPart.substring(0, 3);
     } catch (e) {
         return "K12";
     }
 };
 
-// 1. Start Login Handshake
+// 1. Auth Routes
 app.get('/api/auth/canvas', (req, res) => {
     const authUrl = `${CANVAS_URL}/login/oauth2/auth?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
     res.redirect(authUrl);
 });
 
-// 2. Auth Callback
 app.get('/api/auth/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).send("No code provided.");
@@ -79,12 +79,11 @@ app.get('/api/auth/callback', async (req, res) => {
             res.redirect('/'); 
         });
     } catch (error) {
-        console.error("Auth Error:", error.response?.data || error.message);
         res.status(500).send("Login failed.");
     }
 });
 
-// 3. Admin Routes
+// 2. Admin Panel & Override Routes
 app.get('/admin', (req, res) => {
     if (!req.session.token || !ADMIN_IDS.includes(req.session.canvas_user_id)) {
         return res.status(403).send("<h1>403 Forbidden</h1><p>Admin privileges required.</p>");
@@ -92,17 +91,37 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/admin.html'));
 });
 
+// Toggle Maintenance
 app.post('/api/admin/maintenance', (req, res) => {
     if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
     isMaintenanceMode = !isMaintenanceMode;
     res.json({ enabled: isMaintenanceMode });
 });
 
-// 4. Main Data Route
+// Set Manual School Initial Override
+app.post('/api/admin/overrides', (req, res) => {
+    if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
+    const { userId, initial } = req.body;
+    
+    if (userId && initial) {
+        // Store the override (converted to uppercase, max 5 chars)
+        schoolOverrides[userId.toString()] = initial.toUpperCase().substring(0, 5);
+        res.json({ success: true, overrides: schoolOverrides });
+    } else {
+        res.status(400).json({ error: "UserID and Initial required" });
+    }
+});
+
+// Get current overrides list
+app.get('/api/admin/overrides', (req, res) => {
+    if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
+    res.json(schoolOverrides);
+});
+
+// 3. Main Data Route (The logic core)
 app.get('/api/assignments', async (req, res) => {
     const userId = req.session.canvas_user_id;
 
-    // Maintenance Override
     if (isMaintenanceMode && !ADMIN_IDS.includes(userId)) {
         return res.status(503).json({ 
             error: "Maintenance Mode", 
@@ -130,14 +149,19 @@ app.get('/api/assignments', async (req, res) => {
 
         const uniqueCourses = Array.from(new Map(processedCourses.map(c => [c.id, c])).values());
         
-        // Use the initial from the first valid course to set the logo badge
-        const mainSchool = uniqueCourses.length > 0 ? uniqueCourses[0].school_initial : "K12";
+        // --- OVERRIDE LOGIC ---
+        // Check if an admin has set a manual initial for this specific user
+        const manualInitial = schoolOverrides[userId];
+        
+        // Priority: 1. Manual Override | 2. Auto-detected from course | 3. Default "K12"
+        const mainSchool = manualInitial || (uniqueCourses.length > 0 ? uniqueCourses[0].school_initial : "K12");
 
         res.json({
             user: profile.data.short_name || profile.data.name, 
-            courses: uniqueCourses,                             
+            userId: userId, // Useful for admins to find their own ID
+            courses: uniqueCourses,                               
             planner: planner.data,
-            main_school: mainSchool, // This drives the HCCA pill badge
+            main_school: mainSchool,
             isAdmin: ADMIN_IDS.includes(userId) 
         });
     } catch (error) {
@@ -146,7 +170,6 @@ app.get('/api/assignments', async (req, res) => {
     }
 });
 
-// 5. Logout
 app.get('/api/auth/logout', (req, res) => {
     req.session.destroy();
     res.clearCookie('connect.sid').redirect('/');
