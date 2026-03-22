@@ -13,7 +13,7 @@ const CLIENT_ID = process.env.CLIENT_ID || "10000000000031";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "8ZayHAKETAUn3mUWE3PQtD9ZmNZYZ4mDhfFnfcTP8V6HeBHTCfVzVa6znJmUUxuD";
 
 // Ensures the path is ALWAYS included correctly
-const BASE_URL = process.env.REDIRECT_URI || "https://k12-tigr-dashboard.onrender.com";
+const BASE_URL = process.env.REDIRECT_URI || "https://launchpad.k12learning.online";
 const REDIRECT_URI = BASE_URL.includes('/api/auth/callback') ? BASE_URL : `${BASE_URL.replace(/\/$/, "")}/api/auth/callback`;
 
 const PORT = process.env.PORT || 3000;
