@@ -8,8 +8,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        /* Smooth transition for table rows */
-        tr { transition: all 0.2s ease; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-200 min-h-screen p-8">
@@ -36,15 +34,24 @@
         </div>
 
         <div class="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-[2rem]">
+            <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">System Announcement</h3>
+            <div class="flex gap-4">
+                <input type="text" id="announcement-text" placeholder="Type a message for all users..." class="flex-1 bg-slate-800 border-none rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-white">
+                <button onclick="pushAnnouncement()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs transition-all active:scale-95">
+                    Push Update
+                </button>
+            </div>
+        </div>
+
+        <div class="md:col-span-3 bg-slate-900 border border-slate-800 p-8 rounded-[2rem]">
             <h3 class="text-slate-500 text-[10px] font-black uppercase mb-4">School Initial Override</h3>
             <div class="flex flex-wrap gap-4">
                 <input type="text" id="target-user-id" placeholder="Canvas User ID" class="flex-1 min-w-[150px] bg-slate-800 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-white">
                 <input type="text" id="target-initial" placeholder="Initial (e.g. HCCA)" class="w-32 bg-slate-800 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-white uppercase">
-                <button onclick="saveOverride()" class="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-3 rounded-xl text-xs transition-all active:scale-95">
+                <button onclick="saveOverride()" class="bg-slate-100 hover:bg-white text-slate-950 font-black px-8 py-3 rounded-xl text-xs transition-all active:scale-95">
                     Apply Override
                 </button>
             </div>
-            <p class="text-[10px] text-slate-500 mt-3 font-bold uppercase tracking-wider">Note: Data is saved to <span class="text-blue-400">database.json</span> and survives server restarts.</p>
         </div>
 
         <div class="md:col-span-3 bg-slate-900 border border-slate-800 p-8 rounded-[2rem]">
@@ -80,12 +87,12 @@
                             <td class="py-4 text-green-400 font-bold italic text-xs">ENABLED (SSL)</td>
                         </tr>
                         <tr class="border-b border-slate-800/50">
-                            <td class="py-4 font-mono text-blue-400">DATABASE_STORAGE</td>
-                            <td class="py-4 text-white font-bold">database.json (Persistent)</td>
+                            <td class="py-4 font-mono text-blue-400">DATABASE_LINK</td>
+                            <td class="py-4 text-white">database.json</td>
                         </tr>
                         <tr>
                             <td class="py-4 font-mono text-blue-400">REDIRECT_DOMAIN</td>
-                            <td class="py-4 font-bold text-slate-400">launchpad.k12learning.online</td>
+                            <td class="py-4 font-bold">launchpad.k12learning.online</td>
                         </tr>
                     </tbody>
                 </table>
@@ -106,37 +113,40 @@
                 const container = document.getElementById('override-list-body');
                 container.innerHTML = '';
 
-                if (Object.keys(data).length === 0) {
-                    container.innerHTML = '<tr><td colspan="3" class="py-8 text-center text-slate-600 italic">No active overrides found.</td></tr>';
-                    return;
-                }
-
                 Object.entries(data).forEach(([userId, initial]) => {
                     const row = document.createElement('tr');
-                    row.className = "border-b border-slate-800/50 hover:bg-slate-800/30";
+                    row.className = "border-b border-slate-800/50";
                     row.innerHTML = `
                         <td class="py-4 font-mono text-slate-400">${userId}</td>
                         <td class="py-4">
-                            <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full text-xs font-black">
+                            <span class="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-xs font-black">
                                 ${initial}
                             </span>
                         </td>
                         <td class="py-4">
-                            <button onclick="deleteOverride('${userId}')" class="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 transition-colors">
+                            <button onclick="deleteOverride('${userId}')" class="text-xs font-bold text-red-500 hover:underline transition-all">
                                 Remove
                             </button>
                         </td>
                     `;
                     container.appendChild(row);
                 });
-            } catch (err) { 
-                console.error("Error fetching overrides:", err); 
-            }
+            } catch (err) { console.error("Error fetching overrides:", err); }
+        }
+
+        async function pushAnnouncement() {
+            const msg = document.getElementById('announcement-text').value;
+            const res = await fetch('/api/admin/announcement', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg })
+            });
+            if (res.ok) alert("Global update pushed successfully!");
         }
 
         async function saveOverride() {
-            const userId = document.getElementById('target-user-id').value.trim();
-            const initial = document.getElementById('target-initial').value.trim();
+            const userId = document.getElementById('target-user-id').value;
+            const initial = document.getElementById('target-initial').value;
             
             if(!userId || !initial) return alert("Fill both fields!");
 
@@ -150,30 +160,17 @@
                 document.getElementById('target-user-id').value = '';
                 document.getElementById('target-initial').value = '';
                 fetchOverrides();
-            } else {
-                alert("Failed to save override.");
             }
         }
 
         async function deleteOverride(userId) {
-            if(!confirm(`Are you sure you want to remove the override for user ${userId}?`)) return;
-
-            try {
-                const res = await fetch(`/api/admin/overrides/${userId}`, {
-                    method: 'DELETE'
-                });
-
-                if (res.ok) {
-                    fetchOverrides();
-                } else {
-                    alert("Failed to delete.");
-                }
-            } catch (err) {
-                console.error("Delete error:", err);
-            }
+            if(!confirm(`Remove override for User ${userId}?`)) return;
+            const res = await fetch(`/api/admin/overrides/${userId}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) fetchOverrides();
         }
 
-        // Initial Load
         fetchOverrides();
     </script>
 </body>
