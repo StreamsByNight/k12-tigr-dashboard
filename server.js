@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const session = require('express-session');
 const path = require('path');
-const fs = require('fs'); // Added for persistent storage
+const fs = require('fs'); // Added for persistence
 const app = express();
 
 // --- CONFIGURATION ---
@@ -23,26 +23,28 @@ const ADMIN_IDS = ['1', '10000000000031'];
 let isMaintenanceMode = false;
 
 // --- DATABASE PERSISTENCE ---
-let schoolOverrides = {};
+let schoolOverrides = {}; 
+let systemAnnouncement = "";
 
-// Load existing data on startup
+// Load data from file on startup
 if (fs.existsSync(DB_PATH)) {
     try {
-        const data = fs.readFileSync(DB_PATH, 'utf8');
-        schoolOverrides = JSON.parse(data);
-        console.log("Database loaded successfully.");
+        const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+        schoolOverrides = data.overrides || {};
+        systemAnnouncement = data.announcement || "";
+        console.log("Database loaded from file.");
     } catch (e) {
-        console.error("Error parsing database.json, starting empty.");
+        console.error("Error reading database.json, starting fresh.");
     }
 }
 
-// Helper to save changes to file
+// Helper to save all data
 const saveToDb = () => {
-    try {
-        fs.writeFileSync(DB_PATH, JSON.stringify(schoolOverrides, null, 2));
-    } catch (e) {
-        console.error("Failed to save to database.json", e);
-    }
+    const dataToSave = {
+        overrides: schoolOverrides,
+        announcement: systemAnnouncement
+    };
+    fs.writeFileSync(DB_PATH, JSON.stringify(dataToSave, null, 2));
 };
 
 app.set('trust proxy', 1);
@@ -119,31 +121,38 @@ app.post('/api/admin/maintenance', (req, res) => {
     res.json({ enabled: isMaintenanceMode });
 });
 
-// Set Manual School Initial Override (Persistent)
+// Post Announcement
+app.post('/api/admin/announcement', (req, res) => {
+    if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
+    systemAnnouncement = req.body.message || "";
+    saveToDb();
+    res.json({ success: true, message: systemAnnouncement });
+});
+
+// Set Manual School Initial Override
 app.post('/api/admin/overrides', (req, res) => {
     if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
     const { userId, initial } = req.body;
     
     if (userId && initial) {
         schoolOverrides[userId.toString()] = initial.toUpperCase().substring(0, 5);
-        saveToDb(); // Write to JSON file
+        saveToDb();
         res.json({ success: true, overrides: schoolOverrides });
     } else {
         res.status(400).json({ error: "UserID and Initial required" });
     }
 });
 
-// Delete an Override
+// Delete Override
 app.delete('/api/admin/overrides/:userId', (req, res) => {
     if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
     const { userId } = req.params;
-    
     if (schoolOverrides[userId]) {
         delete schoolOverrides[userId];
-        saveToDb(); // Sync change to file
+        saveToDb();
         res.json({ success: true });
     } else {
-        res.status(404).json({ error: "Override not found" });
+        res.status(404).send("Not found");
     }
 });
 
@@ -184,7 +193,7 @@ app.get('/api/assignments', async (req, res) => {
 
         const uniqueCourses = Array.from(new Map(processedCourses.map(c => [c.id, c])).values());
         
-        // Priority: 1. Manual Override (Persistent) | 2. Auto-detected | 3. Default
+        // Priority: 1. Manual Override | 2. Auto-detected | 3. Default
         const manualInitial = schoolOverrides[userId];
         const mainSchool = manualInitial || (uniqueCourses.length > 0 ? uniqueCourses[0].school_initial : "K12");
 
@@ -194,6 +203,7 @@ app.get('/api/assignments', async (req, res) => {
             courses: uniqueCourses,                               
             planner: planner.data,
             main_school: mainSchool,
+            announcement: systemAnnouncement, // Sent to student dashboard
             isAdmin: ADMIN_IDS.includes(userId) 
         });
     } catch (error) {
