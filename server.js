@@ -17,7 +17,7 @@ const REDIRECT_URI = BASE_URL.includes('/api/auth/callback') ? BASE_URL : `${BAS
 const PORT = process.env.PORT || 3000;
 
 // --- ADMIN & MAINTENANCE SETTINGS ---
-// Added '1' so User ID 1 always has perms as requested
+// Replace 'YOUR_CANVAS_ID_HERE' with your numerical ID from Canvas
 const ADMIN_IDS = ['1', 'YOUR_CANVAS_ID_HERE', '10000000000031']; 
 let isMaintenanceMode = false;
 
@@ -35,20 +35,23 @@ app.use(session({
 }));
 
 app.use(express.static('public')); 
+app.use(express.json()); 
 
-// --- HELPER: Extract School Initials ---
+// --- HELPER: Extract School Initials (e.g., "HCCA") ---
 const extractInitials = (courseCode) => {
     try {
         if (!courseCode) return "K12";
+        // Logic to grab prefix before first underscore or dash
         const parts = courseCode.split(/[_-]/); 
         const firstPart = parts[0].toUpperCase();
+        // Typically school codes are 3-5 chars (HCCA, OHVA, CVA)
         return firstPart.length <= 5 ? firstPart : firstPart.substring(0, 3);
     } catch (e) {
         return "K12";
     }
 };
 
-// 1. Start Login
+// 1. Start Login Handshake
 app.get('/api/auth/canvas', (req, res) => {
     const authUrl = `${CANVAS_URL}/login/oauth2/auth?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
     res.redirect(authUrl);
@@ -76,6 +79,7 @@ app.get('/api/auth/callback', async (req, res) => {
             res.redirect('/'); 
         });
     } catch (error) {
+        console.error("Auth Error:", error.response?.data || error.message);
         res.status(500).send("Login failed.");
     }
 });
@@ -88,23 +92,21 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/admin.html'));
 });
 
-// Toggle Maintenance Mode
 app.post('/api/admin/maintenance', (req, res) => {
     if (!ADMIN_IDS.includes(req.session.canvas_user_id)) return res.sendStatus(403);
     isMaintenanceMode = !isMaintenanceMode;
-    console.log(`Maintenance Mode is now: ${isMaintenanceMode}`);
     res.json({ enabled: isMaintenanceMode });
 });
 
-// 4. Main Data Route (With Maintenance Check)
+// 4. Main Data Route
 app.get('/api/assignments', async (req, res) => {
     const userId = req.session.canvas_user_id;
 
-    // Maintenance Logic: Block non-admins if maintenance is active
+    // Maintenance Override
     if (isMaintenanceMode && !ADMIN_IDS.includes(userId)) {
         return res.status(503).json({ 
             error: "Maintenance Mode", 
-            message: "The Launchpad is currently under maintenance. Please try again later." 
+            message: "Under construction. Back soon!" 
         });
     }
 
@@ -127,13 +129,15 @@ app.get('/api/assignments', async (req, res) => {
             }));
 
         const uniqueCourses = Array.from(new Map(processedCourses.map(c => [c.id, c])).values());
+        
+        // Use the initial from the first valid course to set the logo badge
         const mainSchool = uniqueCourses.length > 0 ? uniqueCourses[0].school_initial : "K12";
 
         res.json({
             user: profile.data.short_name || profile.data.name, 
             courses: uniqueCourses,                             
             planner: planner.data,
-            main_school: mainSchool,
+            main_school: mainSchool, // This drives the HCCA pill badge
             isAdmin: ADMIN_IDS.includes(userId) 
         });
     } catch (error) {
@@ -148,4 +152,4 @@ app.get('/api/auth/logout', (req, res) => {
     res.clearCookie('connect.sid').redirect('/');
 });
 
-app.listen(PORT, () => console.log(`Server live on ${PORT}`));
+app.listen(PORT, () => console.log(`Dashboard running on port ${PORT}`));
