@@ -6,6 +6,7 @@
     <title>K12 Launch Pad - Home</title>
     <link rel="icon" type="image/png" href="https://imgur.com/UNZK8ik.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script>
         tailwind.config = { 
             darkMode: 'class',
@@ -27,6 +28,7 @@
         let isMuted = JSON.parse(localStorage.getItem(MUTE_KEY) || "false");
         let isDark = JSON.parse(localStorage.getItem(THEME_KEY) || "false");
         let isEditMode = false;
+        let lastFetchedSessions = []; // Global store for the timer
 
         const bellSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
@@ -104,18 +106,49 @@
                         <span class="text-blue-600 font-bold ml-2">❯</span>
                     </a>`).join('');
 
-                // --- UPDATED LIVE FILTERING FOR BIGBLUEBUTTON ---
+                let allLiveSessions = [];
                 const today = new Date().toDateString();
-                const liveEvents = plannerItems.filter(item => {
+
+                for (const course of data.courses) {
+                    try {
+                        const confRes = await fetch(`/api/v1/courses/${course.id}/conferences`);
+                        const conferences = await confRes.json();
+                        const activeBBB = conferences.filter(c => c.status === 'in_progress' || c.join_url);
+                        
+                        activeBBB.forEach(conf => {
+                            allLiveSessions.push({
+                                title: conf.title,
+                                url: conf.join_url || `/courses/${course.id}/conferences`,
+                                type: 'BigBlueButton',
+                                courseName: course.name,
+                                date: new Date()
+                            });
+                        });
+                    } catch (err) { console.warn("BBB Check failed", course.id); }
+                }
+
+                plannerItems.forEach(item => {
                     const itemDate = new Date(item.plannable_date || item.todo_date).toDateString();
                     const title = (item.plannable?.title || item.title || "").toLowerCase();
-                    const isLiveTitle = title.includes('live') || title.includes('session') || title.includes('class') || title.includes('zoom') || title.includes('bbb');
+                    const isLiveTitle = title.includes('live') || title.includes('session') || title.includes('homeroom') || title.includes('zoom');
                     
-                    return itemDate === today && (item.plannable_type === 'calendar_event' || isLiveTitle);
+                    if (itemDate === today && (item.plannable_type === 'calendar_event' || isLiveTitle)) {
+                        if (!allLiveSessions.some(s => s.title === (item.plannable?.title || item.title))) {
+                            allLiveSessions.push({
+                                title: item.plannable?.title || item.title,
+                                url: item.html_url || item.plannable?.html_url || `/courses/${item.course_id}/conferences`,
+                                type: 'Live Session',
+                                courseName: item.context_name,
+                                date: new Date(item.plannable_date || item.todo_date)
+                            });
+                        }
+                    }
                 });
-                renderLiveSessions(liveEvents);
 
+                lastFetchedSessions = allLiveSessions; // Update cache
+                renderLiveSessions(allLiveSessions);
                 applyWidgetVisibility();
+
             } catch (e) { console.error("Error loading dashboard:", e); }
         }
 
@@ -126,29 +159,50 @@
                 return;
             }
 
+            sessions.sort((a, b) => a.date - b.date);
+
             calContent.innerHTML = sessions.map(item => {
-                const title = item.plannable?.title || item.title || "Live Session";
-                const time = new Date(item.plannable_date || item.todo_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const now = new Date();
+                const diffMs = item.date - now;
+                const diffMins = Math.floor(diffMs / 60000);
                 
-                // Fallback: If no direct URL, send to the course conferences page
-                const link = item.html_url || item.plannable?.html_url || `/courses/${item.course_id}/conferences`;
+                let statusLabel = "LIVE";
+                let statusColor = "bg-red-500";
+                let pulseClass = "animate-pulse";
+
+                if (diffMins > 0 && diffMins <= 60) {
+                    statusLabel = `In ${diffMins}m`;
+                    statusColor = "bg-amber-500";
+                    pulseClass = "";
+                }
+
+                const timeStr = item.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 
                 return `
                     <div class="flex items-center gap-4 mb-3 last:mb-0 bg-blue-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-blue-100 dark:border-slate-700 transition-all">
-                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[55px]">
-                            <div class="text-[8px] font-black leading-none uppercase tracking-tighter">Live</div>
-                            <div class="text-[10px] font-black leading-none">${time.split(' ')[0]}</div>
+                        <div class="${statusColor} ${pulseClass} text-white rounded-xl p-2 text-center min-w-[55px] shadow-sm">
+                            <div class="text-[8px] font-black leading-none uppercase tracking-tighter">${statusLabel}</div>
+                            <div class="text-[10px] font-black leading-none mt-0.5">${timeStr.split(' ')[0]}</div>
                         </div>
                         <div class="overflow-hidden flex-grow">
-                            <p class="text-xs font-black text-slate-800 dark:text-white truncate uppercase tracking-tight">${title}</p>
-                            <p class="text-[10px] font-bold text-blue-500 uppercase tracking-tighter opacity-80">${item.context_name || 'Class'}</p>
+                            <p class="text-xs font-black text-slate-800 dark:text-white truncate uppercase tracking-tight">${item.title}</p>
+                            <p class="text-[10px] font-bold text-blue-500 uppercase tracking-tighter opacity-80">${item.courseName || 'Class'}</p>
                         </div>
-                        <a href="${link}" target="_blank" 
+                        <a href="${item.url}" target="_blank" onclick="triggerConfetti()"
                            class="bg-blue-600 text-white text-[10px] font-black px-4 py-2 rounded-full hover:bg-blue-700 transition-all shadow-sm active:scale-95">
-                           JOIN
+                            JOIN
                         </a>
                     </div>`;
             }).join('');
+        }
+
+        function triggerConfetti() {
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#0033cc', '#ffffff', '#ff0000']
+            });
         }
 
         function toggleTheme() { isDark = !isDark; localStorage.setItem(THEME_KEY, JSON.stringify(isDark)); applyTheme(); }
@@ -186,7 +240,13 @@
 
         window.onload = () => {
             applyTheme(); updateClock(); updateProgress(); renderTodos(); updateMuteUI(); updateWeather();
-            setInterval(updateClock, 1000); fetchCanvasData(); setInterval(fetchCanvasData, 60000);
+            setInterval(updateClock, 1000); 
+            fetchCanvasData(); 
+            setInterval(fetchCanvasData, 60000);
+            // Minute-by-minute countdown refresh
+            setInterval(() => {
+                if (lastFetchedSessions.length > 0) renderLiveSessions(lastFetchedSessions);
+            }, 60000);
         };
     </script>
     <style>
