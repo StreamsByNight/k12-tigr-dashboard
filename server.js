@@ -9,7 +9,6 @@ const app = express();
 const CANVAS_BASE = process.env.CANVAS_URL || "stridek12academy.com";
 const CANVAS_URL = CANVAS_BASE.startsWith('http') ? CANVAS_BASE : `https://${CANVAS_BASE}`;
 
-// Note: Ensure these match your Canvas Developer Key settings
 const CLIENT_ID = process.env.CLIENT_ID || "10000000000031";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "8ZayHAKETAUn3mUWE3PQtD9ZmNZYZ4mDhfFnfcTP8V6HeBHTCfVzVa6znJmUUxuD";
 
@@ -27,7 +26,6 @@ let isMaintenanceMode = false;
 let schoolOverrides = {}; 
 let systemAnnouncement = "";
 
-// Initialize/Load Database
 if (fs.existsSync(DB_PATH)) {
     try {
         const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
@@ -91,7 +89,6 @@ app.get('/api/auth/callback', async (req, res) => {
 
 // --- STRIDE MANIFEST COMPATIBILITY ROUTES ---
 
-// 1. Official Profile Route
 app.get('/api/profile', (req, res) => {
     if (!req.session.token) return res.status(401).json({ error: "Unauthorized" });
     res.json({
@@ -101,7 +98,6 @@ app.get('/api/profile', (req, res) => {
     });
 });
 
-// 2. Official School Profile (For SchoolPill-CN)
 app.get('/api/schoolProfile', (req, res) => {
     const userId = req.session.canvas_user_id || "guest";
     const manual = schoolOverrides[userId];
@@ -110,6 +106,27 @@ app.get('/api/schoolProfile', (req, res) => {
         schoolInitial: manual || "K12",
         displayPill: true
     });
+});
+
+// NEW: Class Connect Route (Injects BBB sessions into the widget)
+app.get('/api/classconnect', (req, res) => {
+    if (!req.session.token) return res.status(401).json({ error: "Not logged in" });
+    
+    const now = new Date();
+    const oneHourLater = new Date(now.getTime() + (60 * 60 * 1000));
+
+    // This format matches what the Stride "Live Schedule" widget expects
+    res.json([
+        {
+            id: "session-1",
+            name: "Class Connect: Morning Meeting",
+            instructorName: "Online Teacher",
+            startTime: now.toISOString(),
+            endTime: oneHourLater.toISOString(),
+            meetingUrl: "https://your-bbb-link.com", 
+            isLive: true
+        }
+    ]);
 });
 
 // --- ADMIN API ---
