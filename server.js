@@ -108,23 +108,41 @@ app.get('/api/schoolProfile', (req, res) => {
     });
 });
 
-// NEW: Class Connect Route (Injects BBB sessions into the widget)
+// UPDATED: Robust Class Connect Route
 app.get('/api/classconnect', (req, res) => {
     if (!req.session.token) return res.status(401).json({ error: "Not logged in" });
     
     const now = new Date();
-    const oneHourLater = new Date(now.getTime() + (60 * 60 * 1000));
+    const start = new Date(now.getTime() - (5 * 60 * 1000)); // Started 5 mins ago
+    const end = new Date(now.getTime() + (55 * 60 * 1000)); // Ends in 55 mins
 
-    // This format matches what the Stride "Live Schedule" widget expects
     res.json([
         {
-            id: "session-1",
-            name: "Class Connect: Morning Meeting",
-            instructorName: "Online Teacher",
-            startTime: now.toISOString(),
-            endTime: oneHourLater.toISOString(),
-            meetingUrl: "https://your-bbb-link.com", 
-            isLive: true
+            id: "session-777",
+            name: "Live Help: Algebra I",
+            instructorName: "Teacher Simulator",
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
+            meetingUrl: "https://google.com", 
+            isLive: true,
+            status: "active",
+            canJoin: true,
+            isRequired: true
+        }
+    ]);
+});
+
+// NEW: Calendar Events Route (Some widgets look here instead of ClassConnect)
+app.get('/api/canvas/events', (req, res) => {
+    const today = new Date().toISOString().split('T')[0];
+    res.json([
+        {
+            id: "event-101",
+            title: "Live Class: Orientation",
+            start_at: `${today}T14:00:00Z`,
+            end_at: `${today}T15:00:00Z`,
+            type: "calendar_event",
+            workflow_state: "active"
         }
     ]);
 });
