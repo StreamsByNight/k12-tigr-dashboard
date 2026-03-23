@@ -27,59 +27,47 @@
         let isMuted = JSON.parse(localStorage.getItem(MUTE_KEY) || "false");
         let isDark = JSON.parse(localStorage.getItem(THEME_KEY) || "false");
         let isEditMode = false;
-        let notifiedEvents = new Set();
 
         const bellSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
-        // WEATHER LOGIC
         async function updateWeather() {
             try {
                 const geoRes = await fetch('https://ipapi.co/json/');
                 const geoData = await geoRes.json();
                 const { city, latitude, longitude } = geoData;
-
                 const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit`);
                 const weatherData = await weatherRes.json();
-                
                 const temp = Math.round(weatherData.current_weather.temperature);
                 const code = weatherData.current_weather.weathercode;
-
                 let emoji = "☁️";
                 if (code <= 3) emoji = "☀️";
                 else if (code >= 51 && code <= 67) emoji = "🌧️";
                 else if (code >= 71 && code <= 77) emoji = "❄️";
                 else if (code >= 95) emoji = "⛈️";
-
                 document.getElementById('weather-display').innerHTML = `
                     <div class="flex items-center gap-2 mt-4 bg-white/20 px-5 py-2 rounded-full border border-white/10 backdrop-blur-sm">
                         <span class="text-2xl">${emoji}</span>
                         <span class="text-sm font-black uppercase tracking-widest">${city}: ${temp}°F</span>
-                    </div>
-                `;
+                    </div>`;
             } catch (e) {
                 document.getElementById('weather-display').innerHTML = `<span class="text-[10px] opacity-50 uppercase font-bold">Weather Unavailable</span>`;
             }
         }
 
-        // DATA FETCHING (ASSIGNMENTS + LIVE SESSIONS)
         async function fetchCanvasData() {
             try {
-                // Fetch assignments and user info
                 const response = await fetch('/api/assignments'); 
-                
                 if (response.status === 401) {
                     document.getElementById('auth-section').classList.remove('hidden');
                     return;
                 }
-
                 const data = await response.json();
                 document.getElementById('auth-section').classList.add('hidden');
                 
                 // Update School Pill
                 const pill = document.getElementById('school-pill');
-                const pillText = document.getElementById('school-initial-text');
                 if (data.main_school) {
-                    pillText.innerText = data.main_school;
+                    document.getElementById('school-initial-text').innerText = data.main_school;
                     pill.classList.remove('hidden');
                 }
 
@@ -87,57 +75,47 @@
                 if (data.user) {
                     const hour = new Date().getHours();
                     let greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
-                    const cleanName = data.user.replace(/Gradebook/gi, '').trim();
-                    document.getElementById('user-greeting').innerText = `${greeting}, ${cleanName}!`;
+                    document.getElementById('user-greeting').innerText = `${greeting}, ${data.user.replace(/Gradebook/gi, '').trim()}!`;
                 }
 
                 // Render Courses
-                const courseContainer = document.getElementById('course-list');
-                courseContainer.innerHTML = data.courses.map(course => {
+                document.getElementById('course-list').innerHTML = data.courses.map(course => {
                     const enrollment = course.enrollments?.[0] || {};
                     const score = Math.round(enrollment.computed_current_score) || 0;
-                    const grade = enrollment.computed_current_grade || 'N/A';
-                    const gradeColor = score >= 90 ? 'text-green-500 bg-green-50 dark:bg-green-900/20' : 
-                                       score >= 80 ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 
-                                       'text-slate-500 bg-slate-100 dark:bg-slate-800';
-
+                    const gradeColor = score >= 90 ? 'text-green-500 bg-green-50' : score >= 80 ? 'text-blue-500 bg-blue-50' : 'text-slate-500 bg-slate-100';
                     return `
-                        <div id="course-${course.id}" class="min-w-[280px] bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between relative group transition-all hover:shadow-md">
+                        <div id="course-${course.id}" class="min-w-[280px] bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-between relative group transition-all">
                             <button onclick="removeWidget('course-${course.id}')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 text-white w-6 h-1.5 rounded-full z-10"></button>
                             <div>
                                 <div class="flex justify-between items-start mb-4">
                                     <div class="flex flex-col">
                                         <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grade</span>
-                                        <span class="text-2xl font-black text-slate-800 dark:text-white">${grade}</span>
+                                        <span class="text-2xl font-black text-slate-800 dark:text-white">${enrollment.computed_current_grade || 'N/A'}</span>
                                     </div>
-                                    <div class="flex flex-col items-end">
-                                        <button class="text-[10px] font-bold ${gradeColor} px-3 py-1 rounded-full">${score}%</button>
-                                    </div>
+                                    <button class="text-[10px] font-bold ${gradeColor} px-3 py-1 rounded-full">${score}%</button>
                                 </div>
                                 <h3 class="font-black text-slate-800 dark:text-white text-sm mb-4 h-10 overflow-hidden leading-tight">${course.name}</h3>
-                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-24 flex items-center justify-center mb-4 text-4xl">
-                                    ${score > 89 ? '🔥' : '📚'}
-                                </div>
+                                <div class="bg-sky-100 dark:bg-sky-900/30 rounded-3xl h-24 flex items-center justify-center mb-4 text-4xl">${score > 89 ? '🔥' : '📚'}</div>
                             </div>
                             <a href="https://stridek12academy.com/courses/${course.id}" target="_blank" class="w-full py-2.5 border-2 border-blue-600 text-blue-600 rounded-full text-[11px] font-black text-center hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest">Go to Class</a>
                         </div>`;
                 }).join('');
 
-                // Render Top Assignments
-                const focusItems = (data.planner || []).filter(p => p.plannable_type !== 'calendar_event');
-                document.getElementById('lessons-list').innerHTML = focusItems.slice(0, 3).map(item => {
-                    let link = item.html_url || `https://stridek12academy.com/courses/${item.course_id}`;
-                    return `
-                    <a href="${link}" target="_blank" class="block p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center hover:bg-sky-100 dark:hover:bg-slate-700 transition-colors">
+                // Render Assignments (To-Do Next)
+                const plannerItems = data.planner || [];
+                document.getElementById('lessons-list').innerHTML = plannerItems.filter(p => p.plannable_type !== 'calendar_event').slice(0, 3).map(item => `
+                    <a href="${item.html_url || '#'}" target="_blank" class="block p-3 bg-sky-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center hover:bg-sky-100 transition-colors">
                         <p class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${item.plannable?.title || item.title}</p>
                         <span class="text-blue-600 font-bold ml-2">❯</span>
-                    </a>`
-                }).join('');
+                    </a>`).join('');
 
-                // FETCH LIVE SESSIONS (Crucial Fix)
-                const sessionRes = await fetch('/api/classconnect');
-                const sessions = await sessionRes.json();
-                renderLiveSessions(sessions);
+                // --- FIX: Extract LIVE Schedule from Calendar Events ---
+                const today = new Date().toDateString();
+                const liveEvents = plannerItems.filter(item => {
+                    const itemDate = new Date(item.plannable_date || item.todo_date).toDateString();
+                    return itemDate === today && (item.plannable_type === 'calendar_event' || item.html_url);
+                });
+                renderLiveSessions(liveEvents);
 
                 applyWidgetVisibility();
             } catch (e) { console.error("Error loading dashboard:", e); }
@@ -150,100 +128,55 @@
                 return;
             }
 
-            calContent.innerHTML = sessions.map(session => {
-                const startTime = new Date(session.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            calContent.innerHTML = sessions.map(item => {
+                const title = item.plannable?.title || item.title || "Live Session";
+                const link = item.html_url || item.plannable?.html_url || "https://stridek12academy.com/calendar";
+                const time = new Date(item.plannable_date || item.todo_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
                 return `
-                    <a href="${session.meetingUrl}" target="_blank" class="flex items-center gap-4 mb-3 last:mb-0 bg-blue-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-blue-100 hover:border-blue-400 transition-all group/item">
-                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[50px]">
-                            <div class="text-[9px] font-black leading-none">LIVE</div>
-                            <div class="text-xs font-black">NOW</div>
+                    <div class="flex items-center gap-4 mb-3 last:mb-0 bg-blue-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-blue-100 dark:border-slate-700 transition-all group/item">
+                        <div class="bg-blue-600 text-white rounded-xl p-2 text-center min-w-[55px]">
+                            <div class="text-[8px] font-black leading-none uppercase">Live</div>
+                            <div class="text-[10px] font-black leading-none">${time.split(' ')[0]}</div>
                         </div>
                         <div class="overflow-hidden flex-grow">
-                            <p class="text-xs font-black text-slate-800 dark:text-white truncate">${session.name}</p>
-                            <p class="text-[10px] font-bold text-blue-500 uppercase tracking-tight">${startTime} • ${session.instructorName}</p>
+                            <p class="text-xs font-black text-slate-800 dark:text-white truncate uppercase">${title}</p>
+                            <p class="text-[10px] font-bold text-blue-500 uppercase tracking-tight">${item.context_name || 'Class Session'}</p>
                         </div>
-                        <span class="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full group-hover/item:scale-110 transition-transform">JOIN</span>
-                    </a>`;
+                        <a href="${link}" target="_blank" 
+                           class="bg-blue-600 text-white text-[10px] font-black px-4 py-2 rounded-full hover:bg-blue-700 transition-transform active:scale-95 shadow-sm">
+                           JOIN
+                        </a>
+                    </div>`;
             }).join('');
         }
 
-        // UI HELPERS (Clock, Theme, Todos, etc.)
-        function toggleTheme() {
-            isDark = !isDark;
-            localStorage.setItem(THEME_KEY, JSON.stringify(isDark));
-            applyTheme();
-        }
-
-        function applyTheme() {
-            document.documentElement.classList.toggle('dark', isDark);
-            document.getElementById('theme-btn').innerHTML = isDark ? '☀️ Light' : '🌙 Dark';
-        }
-
-        function testBell() {
-            bellSound.play().catch(() => alert("Interact with the page first to enable audio!"));
-        }
-
-        function toggleMute() {
-            isMuted = !isMuted;
-            localStorage.setItem(MUTE_KEY, JSON.stringify(isMuted));
-            updateMuteUI();
-        }
-
-        function updateMuteUI() {
+        // UI HELPERS
+        function toggleTheme() { isDark = !isDark; localStorage.setItem(THEME_KEY, JSON.stringify(isDark)); applyTheme(); }
+        function applyTheme() { document.documentElement.classList.toggle('dark', isDark); document.getElementById('theme-btn').innerHTML = isDark ? '☀️ Light' : '🌙 Dark'; }
+        function testBell() { bellSound.play().catch(() => alert("Click page first to enable audio!")); }
+        function toggleMute() { isMuted = !isMuted; localStorage.setItem(MUTE_KEY, JSON.stringify(isMuted)); updateMuteUI(); }
+        function updateMuteUI() { 
             const btn = document.getElementById('mute-btn');
             btn.innerHTML = isMuted ? '🔇 Muted' : '🔔 Alerts';
             btn.classList.toggle('opacity-50', isMuted);
         }
-
         function renderTodos() {
-            const list = document.getElementById('todo-list');
-            list.innerHTML = todos.map((t, i) => `
+            document.getElementById('todo-list').innerHTML = todos.map((t, i) => `
                 <div class="flex items-center gap-2">
                     <input type="checkbox" onchange="removeTodo(${i})" class="w-4 h-4 accent-blue-600 cursor-pointer">
                     <span class="text-xs font-bold text-slate-600 dark:text-slate-300">${t}</span>
-                </div>
-            `).join('');
+                </div>`).join('');
         }
-
         function addTodo() {
             const input = document.getElementById('todo-input');
-            if (input.value.trim()) {
-                todos.push(input.value.trim());
-                localStorage.setItem(TODO_KEY, JSON.stringify(todos));
-                input.value = '';
-                renderTodos();
-            }
+            if (input.value.trim()) { todos.push(input.value.trim()); localStorage.setItem(TODO_KEY, JSON.stringify(todos)); input.value = ''; renderTodos(); }
         }
-
-        function removeTodo(index) {
-            setTimeout(() => {
-                todos.splice(index, 1);
-                localStorage.setItem(TODO_KEY, JSON.stringify(todos));
-                renderTodos();
-            }, 300);
-        }
-
-        function toggleEdit() {
-            isEditMode = !isEditMode;
-            document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit';
-            document.querySelectorAll('.remove-handle').forEach(h => h.classList.toggle('hidden', !isEditMode));
-        }
-
-        function removeWidget(id) {
-            document.getElementById(id).style.display = 'none';
-            hiddenWidgets.push(id);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets));
-        }
-
-        function applyWidgetVisibility() {
-            hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).style.display = 'none'; });
-        }
-
-        function updateClock() {
-            const now = new Date();
-            document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-
+        function removeTodo(index) { setTimeout(() => { todos.splice(index, 1); localStorage.setItem(TODO_KEY, JSON.stringify(todos)); renderTodos(); }, 300); }
+        function toggleEdit() { isEditMode = !isEditMode; document.getElementById('edit-btn').innerText = isEditMode ? 'Done' : '✎ Edit'; document.querySelectorAll('.remove-handle').forEach(h => h.classList.toggle('hidden', !isEditMode)); }
+        function removeWidget(id) { document.getElementById(id).style.display = 'none'; hiddenWidgets.push(id); localStorage.setItem(STORAGE_KEY, JSON.stringify(hiddenWidgets)); }
+        function applyWidgetVisibility() { hiddenWidgets.forEach(id => { if(document.getElementById(id)) document.getElementById(id).style.display = 'none'; }); }
+        function updateClock() { document.getElementById('clock').innerText = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
         function updateProgress() {
             const total = new Date(2026, 5, 15) - new Date(2025, 8, 1);
             const current = new Date() - new Date(2025, 8, 1);
@@ -253,20 +186,13 @@
         }
 
         window.onload = () => {
-            applyTheme();
-            updateClock();
-            updateProgress();
-            renderTodos();
-            updateMuteUI();
-            updateWeather();
-            setInterval(updateClock, 1000);
-            fetchCanvasData(); // Initial load
-            setInterval(fetchCanvasData, 60000); // Update every minute
+            applyTheme(); updateClock(); updateProgress(); renderTodos(); updateMuteUI(); updateWeather();
+            setInterval(updateClock, 1000); fetchCanvasData(); setInterval(fetchCanvasData, 60000);
         };
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
-        body { font-family: 'Nunito', sans-serif; cursor: default; }
+        body { font-family: 'Nunito', sans-serif; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -274,9 +200,7 @@
 
     <header class="max-w-7xl mx-auto w-full flex justify-between items-center mb-8">
         <div class="flex items-center gap-3">
-            <div class="flex items-center gap-2">
-                <div class="text-blue-600 font-black text-4xl tracking-tighter dark:text-white">k12<span class="text-xs align-top font-bold ml-0.5">®</span></div>
-            </div>
+            <div class="text-blue-600 font-black text-4xl tracking-tighter dark:text-white">k12<span class="text-xs align-top font-bold ml-0.5">®</span></div>
             <div id="school-pill" class="hidden border-2 border-blue-500 rounded-full px-4 py-0.5">
                 <span id="school-initial-text" class="text-blue-600 dark:text-blue-400 font-black text-xs tracking-widest uppercase"></span>
             </div>
@@ -285,7 +209,7 @@
             <button onclick="testBell()" class="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase">Test 🔔</button>
             <button id="mute-btn" onclick="toggleMute()" class="text-[10px] font-black uppercase text-blue-600"></button>
             <button id="theme-btn" onclick="toggleTheme()" class="text-[10px] font-black uppercase text-slate-500 hover:text-blue-600">🌙 Dark</button>
-            <button onclick="localStorage.clear(); location.reload();" class="text-[10px] font-black text-slate-400 uppercase hover:text-red-500 transition-colors">Reset</button>
+            <button onclick="localStorage.clear(); location.reload();" class="text-[10px] font-black text-slate-400 uppercase hover:text-red-500">Reset</button>
         </div>
     </header>
 
@@ -360,7 +284,7 @@
                     <span class="text-2xl mb-1">🎓</span>
                     <span class="font-black text-[10px] uppercase tracking-widest text-center">Tutoring</span>
                 </a>
-                <a href="https://login.classlink.com/my/k12" target="_blank" id="w-classlink" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-4 flex flex-col items-center justify-center border border-slate-100 dark:border-slate-800 relative group hover:shadow-lg transition-all h-[130px]">
+                <a href="https://login.classlink.com/my/k12" target="_blank" id="w-classlink" class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-4 flex flex-col items-center justify-center border border-slate-100 dark:border-slate-800 relative group hover:shadow-lg h-[130px]">
                     <button onclick="event.preventDefault(); removeWidget('w-classlink')" class="remove-handle hidden absolute -top-2 left-1/2 -translate-x-1/2 bg-red-400 w-6 h-1.5 rounded-full z-20"></button>
                     <span class="text-3xl mb-2">🔗</span>
                     <span class="bg-blue-600 text-white px-4 py-2 rounded-full text-[9px] font-black w-full uppercase text-center tracking-widest">Classlink</span>
@@ -376,11 +300,6 @@
 
     <footer class="max-w-7xl mx-auto w-full py-12 border-t border-slate-200 dark:border-slate-800 text-center">
         <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Launchpad V2.0 - Personalized Student Dashboard</p>
-        <div class="flex flex-wrap justify-center gap-x-6 gap-y-3">
-            <a href="https://stridelearning.com/terms-of-use/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Terms</a>
-            <a href="https://stridelearning.com/privacy-policy/" target="_blank" class="text-xs font-bold text-slate-500 hover:text-blue-600">Privacy</a>
-            <a href="/admin" class="text-xs font-bold text-slate-500 hover:text-blue-600">Admin Panel</a>
-        </div>
     </footer>
 
     <div id="auth-section" class="hidden fixed inset-0 bg-white dark:bg-slate-950 z-[400] flex flex-col items-center justify-center p-6 text-center">
