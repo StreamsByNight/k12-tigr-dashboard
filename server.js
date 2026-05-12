@@ -41,32 +41,45 @@ app.use(session({
     saveUninitialized: false,
     cookie: { secure: true, sameSite: 'none', maxAge: 1000 * 60 * 60 * 24 }
 }));
+
+// CRITICAL: Added urlencoded to handle the POST body from the Canvas LTI launch
+app.use(express.urlencoded({ extended: true })); 
 app.use(express.static('public'));
 app.use(express.json());
 
 // --- LIVE SESSION ENGINE ---
 const getMockSessions = () => {
     const now = new Date();
-    // Set start to 10 minutes ago and end to 50 minutes from now to ensure it's "Live"
     const start = new Date(now.getTime() - (10 * 60 * 1000)); 
     const end = new Date(now.getTime() + (50 * 60 * 1000));  
     
     return [{
         id: "session-999",
-        name: "Morning Homeroom - LIVE",
-        instructorName: "Stride Instructor",
+        name: "K12 Support Class",
+        instructorName: "K12 Support",
         startTime: start.toISOString(),
         endTime: end.toISOString(),
-        meetingUrl: "https://google.com", 
+        meetingUrl: "https://k12learning.online/rooms/flg-u5z-06j-uer/join", 
         isLive: true,
         status: "active",
         canJoin: true,
         isRequired: true,
-        timeZone: "UTC"
+        timeZone: "EST"
     }];
 };
 
 // --- ROUTES ---
+
+/**
+ * 0. LTI LAUNCH HANDLER
+ * This catches the POST request from the Canvas sidebar globe icon.
+ * Without this, you get "Cannot POST /"
+ */
+app.post('/', (req, res) => {
+    // Simply serve the index.html. The frontend will then handle 
+    // checking for the session via /api/profile
+    res.sendFile(path.join(__dirname, 'public/index.html'));
+});
 
 // 1. Live Schedule & Calendar Coverage
 app.get(['/api/classconnect', '/api/coach/classconnect'], (req, res) => res.json(getMockSessions()));
@@ -159,6 +172,11 @@ app.get('/api/auth/callback', async (req, res) => {
 app.get('/api/auth/logout', (req, res) => {
     req.session.destroy();
     res.clearCookie('connect.sid').redirect('/');
+});
+
+// Handle React Router deep links
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
 app.listen(PORT, () => console.log(`Stride Launchpad Server active on port ${PORT}`));
